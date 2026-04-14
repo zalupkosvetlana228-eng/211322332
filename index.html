@@ -1,225 +1,375 @@
-<script>
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Команда</title>
+<link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@400;600;700&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #f4f3ef;
+    --surface: #ffffff;
+    --surface2: #f0efe9;
+    --border: rgba(0,0,0,0.08);
+    --border2: rgba(0,0,0,0.13);
+    --text: #1a1a18;
+    --muted: #9a9890;
+    --green: #1a9e6a;
+    --green-bg: #eaf7f0;
+    --green-border: rgba(26,158,106,0.2);
+    --red: #d94040;
+    --red-bg: #fdf0f0;
+    --red-border: rgba(217,64,64,0.2);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: 'Manrope', sans-serif; min-height: 100vh; }
+
+  .wrap { max-width: 500px; margin: 0 auto; padding: 48px 20px 80px; }
+
+  header { margin-bottom: 36px; display: flex; align-items: center; justify-content: space-between; }
+
+  .logo {
+    font-family: 'Unbounded', sans-serif; font-size: 20px; font-weight: 700;
+    letter-spacing: -0.5px; color: var(--text); display: flex; align-items: center; gap: 10px;
+  }
+  .admin-badge {
+    display: none; font-size: 10px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase;
+    background: #fff8e0; color: #a07800; border: 1px solid #f0d060; border-radius: 6px; padding: 3px 9px;
+  }
+  body.admin-mode .admin-badge { display: inline-block; }
+
+  .sync-dot {
+    width: 8px; height: 8px; border-radius: 50%; background: var(--muted);
+    display: inline-block; margin-left: 4px; transition: background 0.3s;
+    flex-shrink: 0;
+  }
+  .sync-dot.connected { background: var(--green); }
+  .sync-dot.error { background: var(--red); }
+
+  .admin-btn {
+    font-family: 'Manrope', sans-serif; font-size: 12px; font-weight: 700;
+    letter-spacing: 0.07em; text-transform: uppercase;
+    background: var(--surface); border: 1px solid var(--border2);
+    color: var(--muted); cursor: pointer; padding: 8px 16px; border-radius: 9px; transition: all 0.18s;
+  }
+  .admin-btn:hover { border-color: var(--text); color: var(--text); }
+  .admin-btn.active { background: var(--text); color: #fff; border-color: var(--text); }
+
+  .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 28px; }
+  .stat {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 14px; padding: 16px; text-align: center;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+  }
+  .stat-num { font-family: 'Unbounded', sans-serif; font-size: 28px; font-weight: 700; line-height: 1; margin-bottom: 6px; }
+  .stat-num.all { color: var(--text); }
+  .stat-num.busy { color: var(--red); }
+  .stat-num.free { color: var(--green); }
+  .stat-label { font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+
+  .list { display: flex; flex-direction: column; gap: 8px; }
+
+  .card {
+    background: var(--surface); border: 1.5px solid var(--border);
+    border-radius: 16px; padding: 14px 16px;
+    display: flex; align-items: center; gap: 13px;
+    transition: border-color 0.25s, background 0.25s;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.05);
+    animation: fadeIn 0.3s ease both;
+  }
+  .card.is-busy { background: var(--red-bg); border-color: var(--red-border); }
+  .card.is-free { background: var(--green-bg); border-color: var(--green-border); }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+
+  .avatar {
+    width: 42px; height: 42px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-family: 'Unbounded', sans-serif; font-size: 13px; font-weight: 700;
+    flex-shrink: 0; border: 1.5px solid rgba(0,0,0,0.07);
+  }
+  .person-name { flex: 1; font-size: 15px; font-weight: 700; color: var(--text); }
+
+  .toggle-area { display: flex; align-items: center; gap: 10px; }
+  .status-text { font-size: 12px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; min-width: 72px; text-align: right; }
+  .status-text.free { color: var(--green); }
+  .status-text.busy { color: var(--red); }
+
+  .toggle { position: relative; width: 46px; height: 26px; cursor: pointer; }
+  .toggle input { opacity: 0; width: 0; height: 0; position: absolute; }
+  .track { position: absolute; inset: 0; background: #c8e8d4; border-radius: 26px; transition: background 0.2s; }
+  .thumb {
+    position: absolute; width: 20px; height: 20px; top: 3px; left: 3px;
+    background: white; border-radius: 50%; box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+    transition: transform 0.2s;
+  }
+  .toggle input:checked ~ .track { background: var(--red); }
+  .toggle input:checked ~ .thumb { transform: translateX(20px); }
+
+  .del-btn {
+    background: none; border: none; cursor: pointer; color: var(--muted);
+    font-size: 20px; line-height: 1; padding: 4px 6px; border-radius: 7px;
+    transition: color 0.15s, background 0.15s; display: none;
+  }
+  .del-btn:hover { color: var(--red); background: var(--red-bg); }
+  body.admin-mode .del-btn { display: block; }
+
+  .add-panel {
+    display: none; margin-top: 16px; background: var(--surface);
+    border: 1.5px solid var(--border2); border-radius: 14px; padding: 14px;
+    gap: 10px; align-items: center; box-shadow: 0 1px 4px rgba(0,0,0,0.05);
+  }
+  body.admin-mode .add-panel { display: flex; }
+  .add-panel input {
+    flex: 1; background: var(--surface2); border: 1px solid var(--border);
+    color: var(--text); border-radius: 9px; padding: 9px 14px;
+    font-family: 'Manrope', sans-serif; font-size: 14px; outline: none; transition: border-color 0.2s;
+  }
+  .add-panel input:focus { border-color: var(--text); }
+  .add-panel input::placeholder { color: var(--muted); }
+  .add-panel button {
+    background: var(--text); color: #fff; border: none; border-radius: 9px; padding: 10px 20px;
+    font-family: 'Manrope', sans-serif; font-size: 14px; font-weight: 700; cursor: pointer;
+    transition: opacity 0.15s; white-space: nowrap;
+  }
+  .add-panel button:hover { opacity: 0.8; }
+
+  .overlay {
+    display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.3); z-index: 100;
+    align-items: center; justify-content: center; backdrop-filter: blur(4px);
+  }
+  .overlay.show { display: flex; }
+  .modal {
+    background: var(--surface); border: 1px solid var(--border2);
+    border-radius: 20px; padding: 32px 28px; width: 310px; text-align: center;
+    box-shadow: 0 8px 40px rgba(0,0,0,0.12);
+    animation: popIn 0.22s cubic-bezier(0.34,1.56,0.64,1) both;
+  }
+  @keyframes popIn { from { opacity: 0; transform: scale(0.88); } to { opacity: 1; transform: scale(1); } }
+  .modal-icon { font-size: 32px; margin-bottom: 12px; }
+  .modal-title { font-family: 'Unbounded', sans-serif; font-size: 15px; font-weight: 700; margin-bottom: 6px; }
+  .modal-sub { font-size: 13px; color: var(--muted); margin-bottom: 22px; }
+  .modal-input {
+    width: 100%; background: var(--surface2); border: 1.5px solid var(--border2); color: var(--text);
+    border-radius: 10px; padding: 11px 16px; font-size: 20px; letter-spacing: 8px; text-align: center;
+    font-family: 'Unbounded', sans-serif; outline: none; margin-bottom: 10px; transition: border-color 0.2s;
+  }
+  .modal-input:focus { border-color: var(--text); }
+  .modal-input.shake { animation: shake 0.32s; border-color: var(--red); }
+  @keyframes shake {
+    0%,100%{transform:translateX(0)} 20%{transform:translateX(-7px)}
+    40%{transform:translateX(7px)} 60%{transform:translateX(-4px)} 80%{transform:translateX(4px)}
+  }
+  .modal-err { font-size: 12px; color: var(--red); height: 16px; margin-bottom: 12px; font-weight: 600; }
+  .modal-btns { display: flex; gap: 8px; }
+  .modal-btns button {
+    flex: 1; padding: 11px; border-radius: 10px;
+    font-family: 'Manrope', sans-serif; font-size: 14px; font-weight: 700; cursor: pointer;
+    transition: opacity 0.15s; border: none;
+  }
+  .btn-cancel { background: var(--surface2); color: var(--muted); }
+  .btn-ok { background: var(--text); color: #fff; }
+  .btn-cancel:hover, .btn-ok:hover { opacity: 0.75; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="logo">
+      Команда
+      <span class="sync-dot" id="syncDot" title="Синхронизация"></span>
+      <span class="admin-badge">Админ</span>
+    </div>
+    <button class="admin-btn" id="adminBtn" onclick="handleAdminClick()">Управление</button>
+  </header>
+
+  <div class="stats">
+    <div class="stat"><div class="stat-num all" id="cAll">0</div><div class="stat-label">Всего</div></div>
+    <div class="stat"><div class="stat-num busy" id="cBusy">0</div><div class="stat-label">Заняты</div></div>
+    <div class="stat"><div class="stat-num free" id="cFree">0</div><div class="stat-label">Свободны</div></div>
+  </div>
+
+  <div class="list" id="list"></div>
+
+  <div class="add-panel">
+    <input type="text" id="newName" placeholder="Имя участника" maxlength="24" />
+    <button onclick="addPerson()">+ Добавить</button>
+  </div>
+</div>
+
+<div class="overlay" id="overlay">
+  <div class="modal">
+    <div class="modal-icon">🔒</div>
+    <div class="modal-title">Вход для админа</div>
+    <div class="modal-sub">Введите пароль для управления командой</div>
+    <input class="modal-input" type="password" id="pwdInput" maxlength="10" placeholder="····" autocomplete="off" />
+    <div class="modal-err" id="pwdErr"></div>
+    <div class="modal-btns">
+      <button class="btn-cancel" onclick="closeModal()">Отмена</button>
+      <button class="btn-ok" onclick="checkPwd()">Войти</button>
+    </div>
+  </div>
+</div>
+
+<!-- Firebase SDK -->
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/12.12.0/firebase-app.js";
+import { getDatabase, ref, onValue, set, push, remove, get } from "https://www.gstatic.com/firebasejs/12.12.0/firebase-database.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyD7t1_Q1IXnu8ftHBD2rG0WiuosuP7NTrA",
+  authDomain: "team-2edf6.firebaseapp.com",
+  projectId: "team-2edf6",
+  storageBucket: "team-2edf6.firebasestorage.app",
+  messagingSenderId: "891226882321",
+  appId: "1:891226882321:web:ba6d36b324530a44828cb0",
+  measurementId: "G-MXBXZDB0XR",
+  databaseURL: "https://team-2edf6-default-rtdb.firebaseio.com"
+};
+
+const app = initializeApp(firebaseConfig);
+const db = getDatabase(app);
+const teamRef = ref(db, 'team');
 
 const ADMIN_PWD = '2211';
-const GIST_ID = "4e1306ea43693059737c4d2434c4f518";
-const FILE_NAME = "team.json";
-
 const COLORS = [
-{bg:'#e8f0ff',cl:'#3355bb'},
-{bg:'#fff0e8',cl:'#bb5522'},
-{bg:'#f0e8ff',cl:'#7733bb'},
-{bg:'#e8fff4',cl:'#226644'},
-{bg:'#fff8e0',cl:'#886600'},
-{bg:'#ffe8f4',cl:'#bb3377'},
-{bg:'#e8faff',cl:'#226688'},
+  {bg:'#e8f0ff',cl:'#3355bb'},{bg:'#fff0e8',cl:'#bb5522'},
+  {bg:'#f0e8ff',cl:'#7733bb'},{bg:'#e8fff4',cl:'#226644'},
+  {bg:'#fff8e0',cl:'#886600'},{bg:'#ffe8f4',cl:'#bb3377'},
+  {bg:'#e8faff',cl:'#226688'},
 ];
 
-let people = [];
+let people = [];        // [{id, name, busy}, ...]
 let isAdmin = false;
-let lastSnapshot = '';
+let colorMap = {};      // name -> color index (стабильные цвета)
 
-function initials(n){
-  return n.slice(0,2).toUpperCase();
+const syncDot = document.getElementById('syncDot');
+
+function setConnected(ok) {
+  syncDot.className = 'sync-dot ' + (ok ? 'connected' : 'error');
 }
 
-async function loadFromServer(){
-  try{
+function initials(n) { return n.slice(0,2).toUpperCase(); }
 
-    const r = await fetch(`https://api.github.com/gists/${GIST_ID}`);
-    const d = await r.json();
-
-    if(!d.files || !d.files[FILE_NAME]) return;
-
-    const file = JSON.parse(d.files[FILE_NAME].content);
-
-    people = file.people;
-
-  }catch(e){
-    console.log("load error",e);
+function getColor(name) {
+  if (colorMap[name] === undefined) {
+    colorMap[name] = Object.keys(colorMap).length % COLORS.length;
   }
+  return COLORS[colorMap[name]];
 }
 
-function render(){
-
-  const snapshot = JSON.stringify(people);
-  if(snapshot === lastSnapshot) return;
-
-  lastSnapshot = snapshot;
-
+function render() {
   const list = document.getElementById('list');
   list.innerHTML = '';
-
-  people.forEach((p,i)=>{
-
-    const c = COLORS[i % COLORS.length];
-
+  people.forEach((p, i) => {
+    const c = getColor(p.name);
     const card = document.createElement('div');
-    card.className = 'card ' + (p.busy ? 'is-busy':'is-free');
-
+    card.className = 'card ' + (p.busy ? 'is-busy' : 'is-free');
+    card.style.animationDelay = (i * 0.04) + 's';
     card.innerHTML = `
-      <div class="avatar" style="background:${c.bg};color:${c.cl}">
-        ${initials(p.name)}
-      </div>
-
+      <div class="avatar" style="background:${c.bg};color:${c.cl}">${initials(p.name)}</div>
       <span class="person-name">${p.name}</span>
-
       <div class="toggle-area">
-        <span class="status-text ${p.busy?'busy':'free'}">
-          ${p.busy?'Занят':'Свободен'}
-        </span>
-
+        <span class="status-text ${p.busy ? 'busy' : 'free'}">${p.busy ? 'Занят' : 'Свободен'}</span>
         <label class="toggle">
-          <input type="checkbox" ${p.busy?'checked':''} onchange="toggle(${i},this.checked)">
-          <div class="track"></div>
-          <div class="thumb"></div>
+          <input type="checkbox" ${p.busy ? 'checked' : ''} data-id="${p.id}">
+          <div class="track"></div><div class="thumb"></div>
         </label>
       </div>
-
-      <button class="del-btn" onclick="removePerson(${i})">×</button>
+      <button class="del-btn" data-id="${p.id}">×</button>
     `;
 
-    list.appendChild(card);
+    // toggle
+    card.querySelector('input[type=checkbox]').addEventListener('change', function() {
+      const personRef = ref(db, 'team/' + this.dataset.id);
+      set(personRef, { name: p.name, busy: this.checked });
+    });
 
+    // delete
+    card.querySelector('.del-btn').addEventListener('click', function() {
+      const personRef = ref(db, 'team/' + this.dataset.id);
+      remove(personRef);
+    });
+
+    list.appendChild(card);
   });
 
-  const busy = people.filter(p=>p.busy).length;
-
+  const busy = people.filter(p => p.busy).length;
   document.getElementById('cAll').textContent = people.length;
   document.getElementById('cBusy').textContent = busy;
   document.getElementById('cFree').textContent = people.length - busy;
-
 }
 
-function toggle(i,checked){
-  people[i].busy = checked;
-  lastSnapshot='';
-  render();
-}
-
-function addPerson(){
-
-  const inp=document.getElementById('newName');
-  const name=inp.value.trim();
-
-  if(!name) return;
-
-  people.push({name,busy:false});
-
-  inp.value='';
-
-  lastSnapshot='';
-
-  render();
-
-}
-
-function removePerson(i){
-  people.splice(i,1);
-  lastSnapshot='';
-  render();
-}
-
-async function syncLoop(){
-
-  const prev = JSON.stringify(people);
-
-  await loadFromServer();
-
-  if(prev !== JSON.stringify(people)){
-    lastSnapshot='';
-    render();
+// Слушаем изменения в реальном времени
+onValue(teamRef, (snapshot) => {
+  setConnected(true);
+  const data = snapshot.val();
+  if (data) {
+    people = Object.entries(data).map(([id, val]) => ({ id, name: val.name, busy: val.busy || false }));
+  } else {
+    // Первый запуск — добавляем дефолтных участников
+    const defaults = ['Влад','Бодя','Юля','Артур','Яша'];
+    defaults.forEach(name => push(teamRef, { name, busy: false }));
+    people = [];
   }
+  render();
+}, (error) => {
+  setConnected(false);
+  console.error('Firebase error:', error);
+});
 
-}
+window.addPerson = function() {
+  const inp = document.getElementById('newName');
+  const name = inp.value.trim();
+  if (!name) return;
+  push(teamRef, { name, busy: false });
+  inp.value = '';
+};
 
-function handleAdminClick(){
-
-  if(isAdmin){
-    exitAdmin();
-    return;
-  }
-
+window.handleAdminClick = function() {
+  if (isAdmin) { exitAdmin(); return; }
   document.getElementById('overlay').classList.add('show');
+  setTimeout(() => document.getElementById('pwdInput').focus(), 50);
+};
 
-  setTimeout(()=>document.getElementById('pwdInput').focus(),50);
-
-}
-
-function checkPwd(){
-
-  if(document.getElementById('pwdInput').value===ADMIN_PWD){
-
-    isAdmin=true;
-
+window.checkPwd = function() {
+  if (document.getElementById('pwdInput').value === ADMIN_PWD) {
+    isAdmin = true;
     document.body.classList.add('admin-mode');
-
-    document.getElementById('adminBtn').textContent='Выйти';
-
+    document.getElementById('adminBtn').textContent = 'Выйти';
     document.getElementById('adminBtn').classList.add('active');
-
     closeModal();
-
-  }else{
-
-    const inp=document.getElementById('pwdInput');
-
-    inp.classList.remove('shake');
-    void inp.offsetWidth;
-    inp.classList.add('shake');
-
-    document.getElementById('pwdErr').textContent='Неверный пароль';
-
-    inp.value='';
-
+  } else {
+    const inp = document.getElementById('pwdInput');
+    inp.classList.remove('shake'); void inp.offsetWidth; inp.classList.add('shake');
+    document.getElementById('pwdErr').textContent = 'Неверный пароль';
+    inp.value = '';
   }
+};
 
-}
-
-function exitAdmin(){
-
-  isAdmin=false;
-
+function exitAdmin() {
+  isAdmin = false;
   document.body.classList.remove('admin-mode');
-
-  document.getElementById('adminBtn').textContent='Управление';
-
+  document.getElementById('adminBtn').textContent = 'Управление';
   document.getElementById('adminBtn').classList.remove('active');
-
 }
 
-function closeModal(){
-
+window.closeModal = function() {
   document.getElementById('overlay').classList.remove('show');
+  document.getElementById('pwdInput').value = '';
+  document.getElementById('pwdErr').textContent = '';
+};
 
-  document.getElementById('pwdInput').value='';
-  document.getElementById('pwdErr').textContent='';
-
-}
-
-document.getElementById('pwdInput').addEventListener('keydown',e=>{
-  if(e.key==='Enter') checkPwd();
-  if(e.key==='Escape') closeModal();
-  document.getElementById('pwdErr').textContent='';
+document.getElementById('pwdInput').addEventListener('keydown', e => {
+  if (e.key === 'Enter') window.checkPwd();
+  if (e.key === 'Escape') window.closeModal();
+  document.getElementById('pwdErr').textContent = '';
 });
-
-document.getElementById('overlay').addEventListener('click',e=>{
-  if(e.target===document.getElementById('overlay')) closeModal();
+document.getElementById('overlay').addEventListener('click', e => {
+  if (e.target === document.getElementById('overlay')) window.closeModal();
 });
-
-document.getElementById('newName').addEventListener('keydown',e=>{
-  if(e.key==='Enter') addPerson();
+document.getElementById('newName').addEventListener('keydown', e => {
+  if (e.key === 'Enter') window.addPerson();
 });
-
-async function start(){
-
-  await loadFromServer();
-
-  render();
-
-  setInterval(syncLoop,1000);
-
-}
-
-start();
-
 </script>
+</body>
+</html>
