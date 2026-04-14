@@ -5,7 +5,6 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Команда — Live синхронизация</title>
 <link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@400;600;700&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
-<!-- Firebase SDKs -->
 <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-database-compat.js"></script>
 <style>
@@ -23,8 +22,6 @@
     --red: #d94040;
     --red-bg: #fdf0f0;
     --red-border: rgba(217,64,64,0.2);
-    --sync-bg: #e8f0ff;
-    --sync-text: #2266aa;
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { background: var(--bg); color: var(--text); font-family: 'Manrope', sans-serif; min-height: 100vh; }
@@ -61,23 +58,15 @@
     display: flex;
     align-items: center;
     gap: 6px;
-    cursor: help;
   }
-  .sync-status.connected { background: var(--sync-bg); color: var(--sync-text); }
-  .sync-status.error { background: #ffe8e8; color: var(--red); }
+  .sync-status.connected { background: #e8f0ff; color: #2266aa; }
+  .sync-status.connected .sync-dot { background: var(--green); }
   .sync-dot {
     width: 8px;
     height: 8px;
     border-radius: 50%;
     background: var(--muted);
     display: inline-block;
-    animation: pulse 1.5s infinite;
-  }
-  .sync-status.connected .sync-dot { background: var(--green); box-shadow: 0 0 4px var(--green); animation: none; }
-  .sync-status.error .sync-dot { background: var(--red); animation: none; }
-  @keyframes pulse {
-    0%, 100% { opacity: 0.3; }
-    50% { opacity: 1; }
   }
 
   .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 28px; }
@@ -195,33 +184,23 @@
   .btn-ok { background: var(--text); color: #fff; }
   .btn-cancel:hover, .btn-ok:hover { opacity: 0.75; }
 
-  .offline-banner {
-    display: none;
+  .debug-info {
     position: fixed;
-    bottom: 20px;
-    left: 50%;
-    transform: translateX(-50%);
-    background: #ff6b6b;
-    color: white;
-    padding: 8px 20px;
-    border-radius: 40px;
-    font-size: 12px;
-    font-weight: 600;
-    z-index: 200;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-  }
-  .offline-banner.show { display: block; }
-
-  .retry-btn {
-    margin-left: 8px;
-    background: rgba(255,255,255,0.2);
-    border: none;
-    color: white;
-    padding: 2px 8px;
-    border-radius: 20px;
-    cursor: pointer;
+    bottom: 10px;
+    left: 10px;
+    right: 10px;
+    background: #1a1a18;
+    color: #0f0;
+    font-family: monospace;
     font-size: 10px;
+    padding: 8px;
+    border-radius: 8px;
+    z-index: 999;
+    max-height: 150px;
+    overflow: auto;
+    display: none;
   }
+  body.debug .debug-info { display: block; }
 </style>
 </head>
 <body>
@@ -229,7 +208,7 @@
   <header>
     <div class="logo">Команда <span class="admin-badge">Админ</span></div>
     <div style="display: flex; gap: 8px; align-items: center;">
-      <div class="sync-status" id="syncStatus" onclick="manualReconnect()">
+      <div class="sync-status" id="syncStatus">
         <span class="sync-dot"></span>
         <span id="syncText">Подключение...</span>
       </div>
@@ -265,13 +244,9 @@
   </div>
 </div>
 
-<div class="offline-banner" id="offlineBanner">
-  📡 Нет подключения к Firebase 
-  <button class="retry-btn" onclick="manualReconnect()">⟳</button>
-</div>
+<div class="debug-info" id="debugInfo"></div>
 
 <script>
-// ========== FIREBASE CONFIG ==========
 const firebaseConfig = {
   apiKey: "AIzaSyD7t1_Q1IXnu8ftHBD2rG0WiuosuP7NTrA",
   authDomain: "team-2edf6.firebaseapp.com",
@@ -279,34 +254,9 @@ const firebaseConfig = {
   storageBucket: "team-2edf6.firebasestorage.app",
   messagingSenderId: "891226882321",
   appId: "1:891226882321:web:ba6d36b324530a44828cb0",
-  measurementId: "G-MXBXZDB0XR",
   databaseURL: "https://team-2edf6-default-rtdb.europe-west1.firebasedatabase.app/"
 };
 
-// Инициализация Firebase
-let database;
-let dbRef;
-let isFirebaseInitialized = false;
-
-function initFirebase() {
-  try {
-    // Проверяем, не инициализирован ли уже
-    if (firebase.apps.length === 0) {
-      firebase.initializeApp(firebaseConfig);
-    }
-    database = firebase.database();
-    dbRef = database.ref('/team');
-    isFirebaseInitialized = true;
-    console.log('✅ Firebase инициализирован успешно');
-    return true;
-  } catch (error) {
-    console.error('❌ Ошибка инициализации Firebase:', error);
-    updateSyncStatus(false, error.message);
-    return false;
-  }
-}
-
-// ========== Глобальные переменные ==========
 const ADMIN_PWD = '2211';
 const COLORS = [
   {bg:'#e8f0ff',cl:'#3355bb'},{bg:'#fff0e8',cl:'#bb5522'},
@@ -318,154 +268,109 @@ const COLORS = [
 let people = [];
 let isAdmin = false;
 let isUpdatingFromRemote = false;
-let reconnectAttempts = 0;
-let reconnectTimer = null;
+let database = null;
+let dbRef = null;
 
-// ========== Вспомогательные функции ==========
-function initials(n){ return n.slice(0,2).toUpperCase(); }
+function debugLog(msg) {
+  const debugDiv = document.getElementById('debugInfo');
+  const time = new Date().toLocaleTimeString();
+  debugDiv.innerHTML += `[${time}] ${msg}<br>`;
+  debugDiv.scrollTop = debugDiv.scrollHeight;
+  console.log(msg);
+}
 
-function updateSyncStatus(connected, errorMsg = null) {
-  const statusDiv = document.getElementById('syncStatus');
-  const syncText = document.getElementById('syncText');
-  const offlineBanner = document.getElementById('offlineBanner');
+function initFirebase() {
+  debugLog('🚀 Инициализация Firebase...');
   
-  if (connected) {
-    statusDiv.classList.remove('error');
-    statusDiv.classList.add('connected');
-    syncText.textContent = 'Синхронизация';
-    offlineBanner.classList.remove('show');
-    reconnectAttempts = 0;
-  } else {
-    statusDiv.classList.remove('connected');
-    if (errorMsg) {
-      statusDiv.classList.add('error');
-      syncText.textContent = 'Ошибка';
+  try {
+    // Проверяем, есть ли уже приложение
+    let app;
+    if (firebase.apps.length === 0) {
+      app = firebase.initializeApp(firebaseConfig);
+      debugLog('✅ Firebase приложение создано');
     } else {
-      statusDiv.classList.remove('error');
-      syncText.textContent = 'Офлайн';
+      app = firebase.apps[0];
+      debugLog('✅ Использую существующее Firebase приложение');
     }
-    offlineBanner.classList.add('show');
+    
+    database = firebase.database();
+    dbRef = database.ref('/team');
+    debugLog('✅ Realtime Database ссылка получена');
+    
+    // Проверка подключения
+    const connectedRef = database.ref('.info/connected');
+    connectedRef.on('value', (snap) => {
+      if (snap.val() === true) {
+        debugLog('✅ Подключено к Firebase!');
+        document.getElementById('syncStatus').classList.add('connected');
+        document.getElementById('syncText').textContent = 'Синхронизация';
+      } else {
+        debugLog('⚠️ Нет подключения к Firebase');
+        document.getElementById('syncStatus').classList.remove('connected');
+        document.getElementById('syncText').textContent = 'Нет подключения';
+      }
+    });
+    
+    // Получение данных
+    dbRef.on('value', (snapshot) => {
+      const data = snapshot.val();
+      debugLog(`📥 Получены данные: ${JSON.stringify(data)}`);
+      
+      if (data && Array.isArray(data) && data.length > 0) {
+        const newPeople = data.map(item => ({ name: item.name, busy: item.busy }));
+        const currentJson = JSON.stringify(people.map(p => ({ name: p.name, busy: p.busy })));
+        const newJson = JSON.stringify(newPeople);
+        
+        if (currentJson !== newJson && !isUpdatingFromRemote) {
+          debugLog('🔄 Обновляем данные из Firebase');
+          isUpdatingFromRemote = true;
+          people = newPeople;
+          saveToLocal();
+          render();
+          isUpdatingFromRemote = false;
+        }
+      } else if (!data || (Array.isArray(data) && data.length === 0)) {
+        if (people.length === 0) {
+          debugLog('📝 База пуста, загружаем дефолтные данные');
+          setDefaultData();
+        }
+      }
+    }, (error) => {
+      debugLog(`❌ Ошибка Firebase: ${error.message}`);
+    });
+    
+  } catch (error) {
+    debugLog(`❌ Критическая ошибка: ${error.message}`);
   }
 }
 
-function manualReconnect() {
-  updateSyncStatus(false);
-  if (reconnectTimer) clearTimeout(reconnectTimer);
-  
-  if (dbRef) {
-    dbRef.off();
-  }
-  
-  setupFirebaseSync();
+function setDefaultData() {
+  isUpdatingFromRemote = true;
+  people = [
+    {name:'Влад',busy:false},{name:'Бодя',busy:false},{name:'Юля',busy:false},
+    {name:'Артур',busy:false},{name:'Яша',busy:false}
+  ];
+  saveToLocal();
+  render();
+  pushToFirebase();
+  isUpdatingFromRemote = false;
+  debugLog('📝 Дефолтные данные загружены');
 }
 
 function pushToFirebase() {
   if (isUpdatingFromRemote) return;
-  if (!isFirebaseInitialized || !dbRef) {
-    console.warn('Firebase не инициализирован');
+  if (!dbRef) {
+    debugLog('⚠️ Нет ссылки на Firebase');
     return;
   }
   
-  const dataToSend = people.map(p => ({
-    name: p.name,
-    busy: p.busy
-  }));
+  const dataToSend = people.map(p => ({ name: p.name, busy: p.busy }));
+  debugLog(`📤 Отправка данных: ${JSON.stringify(dataToSend)}`);
   
-  dbRef.set(dataToSend).catch(err => {
-    console.error('Ошибка отправки в Firebase:', err);
-    updateSyncStatus(false);
-    
-    // Пытаемся переподключиться
-    if (reconnectAttempts < 3) {
-      reconnectAttempts++;
-      reconnectTimer = setTimeout(() => {
-        manualReconnect();
-      }, 3000);
-    }
-  });
-}
-
-function setupFirebaseSync() {
-  if (!isFirebaseInitialized) {
-    const success = initFirebase();
-    if (!success) return;
-  }
-  
-  updateSyncStatus(false);
-  
-  // Устанавливаем соединение с повторными попытками
-  const connectedRef = database.ref('.info/connected');
-  connectedRef.off(); // Убираем старые слушатели
-  connectedRef.on('value', (snap) => {
-    if (snap.val() === true) {
-      console.log('✅ Firebase подключен');
-      updateSyncStatus(true);
-    } else {
-      console.log('⚠️ Firebase отключен');
-      updateSyncStatus(false);
-    }
-  });
-  
-  // Слушаем изменения данных
-  dbRef.off(); // Убираем старые слушатели
-  dbRef.on('value', (snapshot) => {
-    const data = snapshot.val();
-    console.log('📥 Получены данные из Firebase:', data);
-    
-    if (data && Array.isArray(data) && data.length > 0) {
-      const newPeople = data.map(item => ({
-        name: item.name,
-        busy: item.busy
-      }));
-      
-      const currentJson = JSON.stringify(people.map(p => ({name:p.name, busy:p.busy})));
-      const newJson = JSON.stringify(newPeople);
-      
-      if (currentJson !== newJson) {
-        isUpdatingFromRemote = true;
-        people = newPeople;
-        saveToLocal();
-        render();
-        isUpdatingFromRemote = false;
-        console.log('🔄 Данные обновлены из Firebase');
-      }
-    } else if (data && Array.isArray(data) && data.length === 0) {
-      if (people.length === 0) {
-        isUpdatingFromRemote = true;
-        people = [
-          {name:'Влад',busy:false},{name:'Бодя',busy:false},{name:'Юля',busy:false},
-          {name:'Артур',busy:false},{name:'Яша',busy:false}
-        ];
-        saveToLocal();
-        render();
-        pushToFirebase();
-        isUpdatingFromRemote = false;
-      }
-    } else if (!data) {
-      if (people.length === 0) {
-        isUpdatingFromRemote = true;
-        people = [
-          {name:'Влад',busy:false},{name:'Бодя',busy:false},{name:'Юля',busy:false},
-          {name:'Артур',busy:false},{name:'Яша',busy:false}
-        ];
-        saveToLocal();
-        render();
-        pushToFirebase();
-        isUpdatingFromRemote = false;
-      }
-    }
-  }, (error) => {
-    console.error('❌ Ошибка Firebase:', error);
-    updateSyncStatus(false, error.message);
-    
-    // Автоматическая попытка переподключения
-    if (reconnectAttempts < 5) {
-      reconnectAttempts++;
-      reconnectTimer = setTimeout(() => {
-        console.log(`🔄 Попытка переподключения ${reconnectAttempts}/5`);
-        manualReconnect();
-      }, Math.min(1000 * Math.pow(2, reconnectAttempts), 30000));
-    }
+  dbRef.set(dataToSend).then(() => {
+    debugLog('✅ Данные отправлены успешно');
+  }).catch(err => {
+    debugLog(`❌ Ошибка отправки: ${err.message}`);
   });
 }
 
@@ -482,6 +387,7 @@ function loadFromLocal() {
       const localPeople = JSON.parse(d);
       if (localPeople && localPeople.length > 0) {
         people = localPeople;
+        debugLog(`📀 Загружено из localStorage: ${people.length} участников`);
         return true;
       }
     }
@@ -489,21 +395,23 @@ function loadFromLocal() {
   return false;
 }
 
-function render(){
+function initials(n) { return n.slice(0,2).toUpperCase(); }
+
+function render() {
   const list = document.getElementById('list');
   list.innerHTML = '';
-  people.forEach((p,i) => {
+  people.forEach((p, i) => {
     const c = COLORS[i % COLORS.length];
     const card = document.createElement('div');
     card.className = 'card ' + (p.busy ? 'is-busy' : 'is-free');
-    card.style.animationDelay = (i*0.04)+'s';
+    card.style.animationDelay = (i * 0.04) + 's';
     card.innerHTML = `
       <div class="avatar" style="background:${c.bg};color:${c.cl}">${initials(p.name)}</div>
       <span class="person-name">${escapeHtml(p.name)}</span>
       <div class="toggle-area">
-        <span class="status-text ${p.busy?'busy':'free'}">${p.busy?'Занят':'Свободен'}</span>
+        <span class="status-text ${p.busy ? 'busy' : 'free'}">${p.busy ? 'Занят' : 'Свободен'}</span>
         <label class="toggle">
-          <input type="checkbox" ${p.busy?'checked':''} onchange="toggle(${i},this.checked)">
+          <input type="checkbox" ${p.busy ? 'checked' : ''} onchange="toggle(${i},this.checked)">
           <div class="track"></div><div class="thumb"></div>
         </label>
       </div>
@@ -511,7 +419,7 @@ function render(){
     `;
     list.appendChild(card);
   });
-  const busy = people.filter(p=>p.busy).length;
+  const busy = people.filter(p => p.busy).length;
   document.getElementById('cAll').textContent = people.length;
   document.getElementById('cBusy').textContent = busy;
   document.getElementById('cFree').textContent = people.length - busy;
@@ -527,7 +435,7 @@ function escapeHtml(str) {
   });
 }
 
-function toggle(i,checked){
+function toggle(i, checked) {
   if (i >= people.length) return;
   people[i].busy = checked;
   saveToLocal();
@@ -535,103 +443,106 @@ function toggle(i,checked){
   pushToFirebase();
 }
 
-function addPerson(){
-  const inp=document.getElementById('newName');
-  const name=inp.value.trim();
-  if(!name) return;
-  
+function addPerson() {
+  const inp = document.getElementById('newName');
+  const name = inp.value.trim();
+  if (!name) return;
   if (people.some(p => p.name.toLowerCase() === name.toLowerCase())) {
     alert('Участник с таким именем уже существует');
     return;
   }
-  
-  people.push({name,busy:false});
-  inp.value='';
+  people.push({ name, busy: false });
+  inp.value = '';
   saveToLocal();
   render();
   pushToFirebase();
 }
 
-function removePerson(i){
+function removePerson(i) {
   if (i >= people.length) return;
-  people.splice(i,1);
+  people.splice(i, 1);
   saveToLocal();
   render();
   pushToFirebase();
 }
 
-function handleAdminClick(){
-  if(isAdmin){
+function handleAdminClick() {
+  if (isAdmin) {
     exitAdmin();
     return;
   }
   document.getElementById('overlay').classList.add('show');
-  setTimeout(()=>document.getElementById('pwdInput').focus(),50);
+  setTimeout(() => document.getElementById('pwdInput').focus(), 50);
 }
 
-function checkPwd(){
+function checkPwd() {
   const pwdInput = document.getElementById('pwdInput');
-  if(pwdInput.value === ADMIN_PWD){
-    isAdmin=true;
+  if (pwdInput.value === ADMIN_PWD) {
+    isAdmin = true;
     document.body.classList.add('admin-mode');
-    document.getElementById('adminBtn').textContent='Выйти';
+    document.getElementById('adminBtn').textContent = 'Выйти';
     document.getElementById('adminBtn').classList.add('active');
     closeModal();
   } else {
-    const inp=document.getElementById('pwdInput');
+    const inp = document.getElementById('pwdInput');
     inp.classList.remove('shake');
     void inp.offsetWidth;
     inp.classList.add('shake');
-    document.getElementById('pwdErr').textContent='Неверный пароль';
-    inp.value='';
+    document.getElementById('pwdErr').textContent = 'Неверный пароль';
+    inp.value = '';
   }
 }
 
-function exitAdmin(){
-  isAdmin=false;
+function exitAdmin() {
+  isAdmin = false;
   document.body.classList.remove('admin-mode');
-  document.getElementById('adminBtn').textContent='Управление';
+  document.getElementById('adminBtn').textContent = 'Управление';
   document.getElementById('adminBtn').classList.remove('active');
 }
 
-function closeModal(){
+function closeModal() {
   document.getElementById('overlay').classList.remove('show');
-  document.getElementById('pwdInput').value='';
-  document.getElementById('pwdErr').textContent='';
+  document.getElementById('pwdInput').value = '';
+  document.getElementById('pwdErr').textContent = '';
 }
 
 function init() {
-  const hasLocal = loadFromLocal();
+  // Включаем дебаг режим (нажми Ctrl+Shift+D)
+  document.addEventListener('keydown', (e) => {
+    if (e.ctrlKey && e.shiftKey && e.key === 'D') {
+      document.body.classList.toggle('debug');
+      debugLog('🐛 Дебаг режим ' + (document.body.classList.contains('debug') ? 'включен' : 'выключен'));
+    }
+  });
   
+  debugLog('🚀 Приложение запущено');
+  debugLog(`📍 URL: ${window.location.href}`);
+  
+  const hasLocal = loadFromLocal();
   if (!hasLocal || people.length === 0) {
     people = [
       {name:'Влад',busy:false},{name:'Бодя',busy:false},{name:'Юля',busy:false},
       {name:'Артур',busy:false},{name:'Яша',busy:false}
     ];
     saveToLocal();
+    debugLog('📀 Созданы дефолтные данные');
   }
-  
   render();
-  setupFirebaseSync();
-  
-  // Выводим информацию для отладки в консоль
-  console.log('📍 Приложение запущено');
-  console.log('🌐 URL:', window.location.href);
-  console.log('🔧 Firebase config:', firebaseConfig);
+  initFirebase();
 }
 
-document.getElementById('pwdInput').addEventListener('keydown',e=>{
-  if(e.key==='Enter') checkPwd();
-  if(e.key==='Escape') closeModal();
-  document.getElementById('pwdErr').textContent='';
+document.getElementById('pwdInput').addEventListener('keydown', e => {
+  if (e.key === 'Enter') checkPwd();
+  if (e.key === 'Escape') closeModal();
+  document.getElementById('pwdErr').textContent = '';
 });
 
-document.getElementById('overlay').addEventListener('click',e=>{
-  if(e.target===document.getElementById('overlay')) closeModal();
+document.getElementById('overlay').addEventListener('click', e => {
+  if (e.target === document.getElementById('overlay')) closeModal();
 });
 
-document.getElementById('newName').addEventListener('keydown',e=>{
-  if(e.key==='Enter') addPerson();
+document.getElementById('newName').addEventListener('keydown', e => {
+  if (e.key === 'Enter') addPerson();
 });
 
 init();
