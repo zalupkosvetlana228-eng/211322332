@@ -65,13 +65,11 @@
     background: var(--surface); border: 1.5px solid var(--border);
     border-radius: 16px; padding: 14px 16px;
     display: flex; align-items: center; gap: 13px;
-    transition: border-color 0.25s, background 0.25s;
+    transition: border-color 0.3s, background 0.3s;
     box-shadow: 0 1px 4px rgba(0,0,0,0.05);
-    animation: fadeIn 0.3s ease both;
   }
   .card.is-busy { background: var(--red-bg); border-color: var(--red-border); }
   .card.is-free { background: var(--green-bg); border-color: var(--green-border); }
-  @keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
 
   .avatar {
     width: 42px; height: 42px; border-radius: 50%;
@@ -200,6 +198,7 @@
 
 <script>
 const ADMIN_PWD = '2211';
+const STORAGE_KEY = 'team_v2';
 const COLORS = [
   {bg:'#e8f0ff',cl:'#3355bb'},{bg:'#fff0e8',cl:'#bb5522'},
   {bg:'#f0e8ff',cl:'#7733bb'},{bg:'#e8fff4',cl:'#226644'},
@@ -212,21 +211,23 @@ let people = [
   {name:'Артур',busy:false},{name:'Яша',busy:false}
 ];
 let isAdmin = false;
+let lastSnapshot = '';
 
-function save(){ try{ localStorage.setItem('team_v2', JSON.stringify(people)); }catch(e){} }
-function load(){ try{ const d=localStorage.getItem('team_v2'); if(d) people=JSON.parse(d); }catch(e){} }
-load();
-
+function save(){ try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(people)); }catch(e){} }
+function loadFromStorage(){ try{ const d=localStorage.getItem(STORAGE_KEY); if(d) return JSON.parse(d); }catch(e){} return null; }
 function initials(n){ return n.slice(0,2).toUpperCase(); }
 
 function render(){
+  const snapshot = JSON.stringify(people);
+  if(snapshot === lastSnapshot) return;
+  lastSnapshot = snapshot;
+
   const list = document.getElementById('list');
   list.innerHTML = '';
   people.forEach((p,i) => {
     const c = COLORS[i % COLORS.length];
     const card = document.createElement('div');
     card.className = 'card ' + (p.busy ? 'is-busy' : 'is-free');
-    card.style.animationDelay = (i*0.04)+'s';
     card.innerHTML = `
       <div class="avatar" style="background:${c.bg};color:${c.cl}">${initials(p.name)}</div>
       <span class="person-name">${p.name}</span>
@@ -247,13 +248,23 @@ function render(){
   document.getElementById('cFree').textContent = people.length - busy;
 }
 
-function toggle(i,checked){ people[i].busy=checked; save(); render(); }
+function syncLoop(){
+  const fresh = loadFromStorage();
+  if(fresh){
+    if(JSON.stringify(fresh) !== JSON.stringify(people)){
+      people = fresh;
+    }
+  }
+  render();
+}
+
+function toggle(i,checked){ people[i].busy=checked; lastSnapshot=''; save(); render(); }
 function addPerson(){
   const inp=document.getElementById('newName');
   const name=inp.value.trim(); if(!name) return;
-  people.push({name,busy:false}); inp.value=''; save(); render();
+  people.push({name,busy:false}); inp.value=''; lastSnapshot=''; save(); render();
 }
-function removePerson(i){ people.splice(i,1); save(); render(); }
+function removePerson(i){ people.splice(i,1); lastSnapshot=''; save(); render(); }
 
 function handleAdminClick(){
   if(isAdmin){ exitAdmin(); return; }
@@ -292,7 +303,10 @@ document.getElementById('overlay').addEventListener('click',e=>{
 });
 document.getElementById('newName').addEventListener('keydown',e=>{ if(e.key==='Enter') addPerson(); });
 
+const stored = loadFromStorage();
+if(stored) people = stored; else save();
 render();
+setInterval(syncLoop, 2000);
 </script>
 </body>
 </html>
