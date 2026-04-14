@@ -19,219 +19,207 @@ let isAdmin = false;
 let lastSnapshot = '';
 
 function initials(n){
-return n.slice(0,2).toUpperCase();
+  return n.slice(0,2).toUpperCase();
 }
 
 async function loadFromServer(){
-try{
+  try{
 
-const r = await fetch(`https://api.github.com/gists/${GIST_ID}`);
-const d = await r.json();
+    const r = await fetch(`https://api.github.com/gists/${GIST_ID}`);
+    const d = await r.json();
 
-if(!d.files || !d.files[FILE_NAME]) return;
+    if(!d.files || !d.files[FILE_NAME]) return;
 
-const file = JSON.parse(d.files[FILE_NAME].content);
+    const file = JSON.parse(d.files[FILE_NAME].content);
 
-people = file.people;
+    people = file.people;
 
-}catch(e){
-console.log("Load error",e);
-}
+  }catch(e){
+    console.log("load error",e);
+  }
 }
 
 function render(){
 
-const snapshot = JSON.stringify(people);
+  const snapshot = JSON.stringify(people);
+  if(snapshot === lastSnapshot) return;
 
-if(snapshot === lastSnapshot) return;
+  lastSnapshot = snapshot;
 
-lastSnapshot = snapshot;
+  const list = document.getElementById('list');
+  list.innerHTML = '';
 
-const list = document.getElementById('list');
-list.innerHTML = '';
+  people.forEach((p,i)=>{
 
-people.forEach((p,i)=>{
+    const c = COLORS[i % COLORS.length];
 
-const c = COLORS[i % COLORS.length];
+    const card = document.createElement('div');
+    card.className = 'card ' + (p.busy ? 'is-busy':'is-free');
 
-const card = document.createElement('div');
+    card.innerHTML = `
+      <div class="avatar" style="background:${c.bg};color:${c.cl}">
+        ${initials(p.name)}
+      </div>
 
-card.className = 'card ' + (p.busy ? 'is-busy':'is-free');
+      <span class="person-name">${p.name}</span>
 
-card.innerHTML = `
+      <div class="toggle-area">
+        <span class="status-text ${p.busy?'busy':'free'}">
+          ${p.busy?'Занят':'Свободен'}
+        </span>
 
-<div class="avatar" style="background:${c.bg};color:${c.cl}">
-${initials(p.name)}
-</div>
+        <label class="toggle">
+          <input type="checkbox" ${p.busy?'checked':''} onchange="toggle(${i},this.checked)">
+          <div class="track"></div>
+          <div class="thumb"></div>
+        </label>
+      </div>
 
-<span class="person-name">${p.name}</span>
+      <button class="del-btn" onclick="removePerson(${i})">×</button>
+    `;
 
-<div class="toggle-area">
+    list.appendChild(card);
 
-<span class="status-text ${p.busy?'busy':'free'}">
-${p.busy?'Занят':'Свободен'}
-</span>
+  });
 
-<label class="toggle">
-<input type="checkbox" ${p.busy?'checked':''} onchange="toggle(${i},this.checked)">
-<div class="track"></div>
-<div class="thumb"></div>
-</label>
+  const busy = people.filter(p=>p.busy).length;
 
-</div>
-
-<button class="del-btn" onclick="removePerson(${i})">×</button>
-
-`;
-
-list.appendChild(card);
-
-});
-
-const busy = people.filter(p=>p.busy).length;
-
-document.getElementById('cAll').textContent = people.length;
-document.getElementById('cBusy').textContent = busy;
-document.getElementById('cFree').textContent = people.length - busy;
+  document.getElementById('cAll').textContent = people.length;
+  document.getElementById('cBusy').textContent = busy;
+  document.getElementById('cFree').textContent = people.length - busy;
 
 }
 
 function toggle(i,checked){
-
-people[i].busy = checked;
-
-lastSnapshot='';
-
-render();
-
+  people[i].busy = checked;
+  lastSnapshot='';
+  render();
 }
 
 function addPerson(){
 
-const inp=document.getElementById('newName');
-const name=inp.value.trim();
+  const inp=document.getElementById('newName');
+  const name=inp.value.trim();
 
-if(!name) return;
+  if(!name) return;
 
-people.push({name,busy:false});
+  people.push({name,busy:false});
 
-inp.value='';
+  inp.value='';
 
-lastSnapshot='';
+  lastSnapshot='';
 
-render();
+  render();
 
 }
 
 function removePerson(i){
-
-people.splice(i,1);
-
-lastSnapshot='';
-
-render();
-
+  people.splice(i,1);
+  lastSnapshot='';
+  render();
 }
 
 async function syncLoop(){
 
-const prev = JSON.stringify(people);
+  const prev = JSON.stringify(people);
 
-await loadFromServer();
+  await loadFromServer();
 
-if(prev !== JSON.stringify(people)){
-lastSnapshot='';
-render();
-}
+  if(prev !== JSON.stringify(people)){
+    lastSnapshot='';
+    render();
+  }
 
 }
 
 function handleAdminClick(){
 
-if(isAdmin){
-exitAdmin();
-return;
-}
+  if(isAdmin){
+    exitAdmin();
+    return;
+  }
 
-document.getElementById('overlay').classList.add('show');
+  document.getElementById('overlay').classList.add('show');
 
-setTimeout(()=>document.getElementById('pwdInput').focus(),50);
+  setTimeout(()=>document.getElementById('pwdInput').focus(),50);
 
 }
 
 function checkPwd(){
 
-if(document.getElementById('pwdInput').value===ADMIN_PWD){
+  if(document.getElementById('pwdInput').value===ADMIN_PWD){
 
-isAdmin=true;
+    isAdmin=true;
 
-document.body.classList.add('admin-mode');
+    document.body.classList.add('admin-mode');
 
-document.getElementById('adminBtn').textContent='Выйти';
+    document.getElementById('adminBtn').textContent='Выйти';
 
-document.getElementById('adminBtn').classList.add('active');
+    document.getElementById('adminBtn').classList.add('active');
 
-closeModal();
+    closeModal();
 
-}else{
+  }else{
 
-const inp=document.getElementById('pwdInput');
+    const inp=document.getElementById('pwdInput');
 
-inp.classList.remove('shake');
-void inp.offsetWidth;
-inp.classList.add('shake');
+    inp.classList.remove('shake');
+    void inp.offsetWidth;
+    inp.classList.add('shake');
 
-document.getElementById('pwdErr').textContent='Неверный пароль';
+    document.getElementById('pwdErr').textContent='Неверный пароль';
 
-inp.value='';
+    inp.value='';
 
-}
+  }
 
 }
 
 function exitAdmin(){
 
-isAdmin=false;
+  isAdmin=false;
 
-document.body.classList.remove('admin-mode');
+  document.body.classList.remove('admin-mode');
 
-document.getElementById('adminBtn').textContent='Управление';
+  document.getElementById('adminBtn').textContent='Управление';
 
-document.getElementById('adminBtn').classList.remove('active');
+  document.getElementById('adminBtn').classList.remove('active');
 
 }
 
 function closeModal(){
 
-document.getElementById('overlay').classList.remove('show');
+  document.getElementById('overlay').classList.remove('show');
 
-document.getElementById('pwdInput').value='';
-document.getElementById('pwdErr').textContent='';
+  document.getElementById('pwdInput').value='';
+  document.getElementById('pwdErr').textContent='';
 
 }
 
 document.getElementById('pwdInput').addEventListener('keydown',e=>{
-if(e.key==='Enter') checkPwd();
-if(e.key==='Escape') closeModal();
-document.getElementById('pwdErr').textContent='';
+  if(e.key==='Enter') checkPwd();
+  if(e.key==='Escape') closeModal();
+  document.getElementById('pwdErr').textContent='';
 });
 
 document.getElementById('overlay').addEventListener('click',e=>{
-if(e.target===document.getElementById('overlay')) closeModal();
+  if(e.target===document.getElementById('overlay')) closeModal();
 });
 
 document.getElementById('newName').addEventListener('keydown',e=>{
-if(e.key==='Enter') addPerson();
+  if(e.key==='Enter') addPerson();
 });
 
-(async()=>{
+async function start(){
 
-await loadFromServer();
+  await loadFromServer();
 
-render();
+  render();
 
-setInterval(syncLoop,1000);
+  setInterval(syncLoop,1000);
 
-})();
+}
+
+start();
 
 </script>
