@@ -3,8 +3,11 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Команда</title>
+<title>Команда — Live синхронизация</title>
 <link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@400;600;700&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
+<!-- Firebase SDKs -->
+<script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-database-compat.js"></script>
 <style>
   :root {
     --bg: #f4f3ef;
@@ -20,13 +23,15 @@
     --red: #d94040;
     --red-bg: #fdf0f0;
     --red-border: rgba(217,64,64,0.2);
+    --sync-bg: #e8f0ff;
+    --sync-text: #2266aa;
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { background: var(--bg); color: var(--text); font-family: 'Manrope', sans-serif; min-height: 100vh; }
 
   .wrap { max-width: 500px; margin: 0 auto; padding: 48px 20px 80px; }
 
-  header { margin-bottom: 36px; display: flex; align-items: center; justify-content: space-between; }
+  header { margin-bottom: 36px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; }
 
   .logo {
     font-family: 'Unbounded', sans-serif; font-size: 20px; font-weight: 700;
@@ -38,14 +43,6 @@
   }
   body.admin-mode .admin-badge { display: inline-block; }
 
-  .sync-dot {
-    width: 8px; height: 8px; border-radius: 50%; background: var(--muted);
-    display: inline-block; margin-left: 4px; transition: background 0.3s;
-    flex-shrink: 0;
-  }
-  .sync-dot.connected { background: var(--green); }
-  .sync-dot.error { background: var(--red); }
-
   .admin-btn {
     font-family: 'Manrope', sans-serif; font-size: 12px; font-weight: 700;
     letter-spacing: 0.07em; text-transform: uppercase;
@@ -54,6 +51,26 @@
   }
   .admin-btn:hover { border-color: var(--text); color: var(--text); }
   .admin-btn.active { background: var(--text); color: #fff; border-color: var(--text); }
+
+  .sync-status {
+    font-size: 10px;
+    padding: 5px 10px;
+    border-radius: 20px;
+    background: var(--surface2);
+    color: var(--muted);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .sync-status.connected { background: var(--sync-bg); color: var(--sync-text); }
+  .sync-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--muted);
+    display: inline-block;
+  }
+  .sync-status.connected .sync-dot { background: var(--green); box-shadow: 0 0 4px var(--green); }
 
   .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 28px; }
   .stat {
@@ -169,17 +186,36 @@
   .btn-cancel { background: var(--surface2); color: var(--muted); }
   .btn-ok { background: var(--text); color: #fff; }
   .btn-cancel:hover, .btn-ok:hover { opacity: 0.75; }
+
+  .offline-banner {
+    display: none;
+    position: fixed;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: #ff6b6b;
+    color: white;
+    padding: 8px 20px;
+    border-radius: 40px;
+    font-size: 12px;
+    font-weight: 600;
+    z-index: 200;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+  }
+  .offline-banner.show { display: block; }
 </style>
 </head>
 <body>
 <div class="wrap">
   <header>
-    <div class="logo">
-      Команда
-      <span class="sync-dot" id="syncDot" title="Синхронизация"></span>
-      <span class="admin-badge">Админ</span>
+    <div class="logo">Команда <span class="admin-badge">Админ</span></div>
+    <div style="display: flex; gap: 8px; align-items: center;">
+      <div class="sync-status" id="syncStatus">
+        <span class="sync-dot"></span>
+        <span id="syncText">Подключение...</span>
+      </div>
+      <button class="admin-btn" id="adminBtn" onclick="handleAdminClick()">Управление</button>
     </div>
-    <button class="admin-btn" id="adminBtn" onclick="handleAdminClick()">Управление</button>
   </header>
 
   <div class="stats">
@@ -210,11 +246,10 @@
   </div>
 </div>
 
-<!-- Firebase SDK -->
-<script type="module">
-import { initializeApp } from "https://www.gstatic.com/firebasejs/12.12.0/firebase-app.js";
-import { getDatabase, ref, onValue, set, push, remove, get } from "https://www.gstatic.com/firebasejs/12.12.0/firebase-database.js";
+<div class="offline-banner" id="offlineBanner">📡 Нет подключения к сети</div>
 
+<script>
+// ========== FIREBASE CONFIG ==========
 const firebaseConfig = {
   apiKey: "AIzaSyD7t1_Q1IXnu8ftHBD2rG0WiuosuP7NTrA",
   authDomain: "team-2edf6.firebaseapp.com",
@@ -223,13 +258,15 @@ const firebaseConfig = {
   messagingSenderId: "891226882321",
   appId: "1:891226882321:web:ba6d36b324530a44828cb0",
   measurementId: "G-MXBXZDB0XR",
-  databaseURL: "https://team-2edf6-default-rtdb.firebaseio.com"
+  databaseURL: "https://console.firebase.google.com/u/0/project/team-2edf6/database/team-2edf6-default-rtdb/data/~2F" // 👈 добавляем URL базы
 };
 
-const app = initializeApp(firebaseConfig);
-const db = getDatabase(app);
-const teamRef = ref(db, 'team');
+// Инициализация Firebase
+firebase.initializeApp(firebaseConfig);
+const database = firebase.database();
+const dbRef = database.ref('/team');
 
+// ========== Глобальные переменные ==========
 const ADMIN_PWD = '2211';
 const COLORS = [
   {bg:'#e8f0ff',cl:'#3355bb'},{bg:'#fff0e8',cl:'#bb5522'},
@@ -238,138 +275,287 @@ const COLORS = [
   {bg:'#e8faff',cl:'#226688'},
 ];
 
-let people = [];        // [{id, name, busy}, ...]
+let people = [];
 let isAdmin = false;
-let colorMap = {};      // name -> color index (стабильные цвета)
+let isUpdatingFromRemote = false;  // Флаг, чтобы не отправлять обратно при локальном обновлении
+let syncListenersAttached = false;
 
-const syncDot = document.getElementById('syncDot');
+// ========== Вспомогательные функции ==========
+function initials(n){ return n.slice(0,2).toUpperCase(); }
 
-function setConnected(ok) {
-  syncDot.className = 'sync-dot ' + (ok ? 'connected' : 'error');
-}
-
-function initials(n) { return n.slice(0,2).toUpperCase(); }
-
-function getColor(name) {
-  if (colorMap[name] === undefined) {
-    colorMap[name] = Object.keys(colorMap).length % COLORS.length;
+// ========== Обновление статуса синхронизации ==========
+function updateSyncStatus(connected) {
+  const statusDiv = document.getElementById('syncStatus');
+  const syncText = document.getElementById('syncText');
+  const offlineBanner = document.getElementById('offlineBanner');
+  
+  if (connected) {
+    statusDiv.classList.add('connected');
+    syncText.textContent = 'Синхронизация';
+    offlineBanner.classList.remove('show');
+  } else {
+    statusDiv.classList.remove('connected');
+    syncText.textContent = 'Офлайн';
+    offlineBanner.classList.add('show');
   }
-  return COLORS[colorMap[name]];
 }
 
-function render() {
+// ========== Отправка данных в Firebase ==========
+function pushToFirebase() {
+  if (isUpdatingFromRemote) return;
+  
+  const dataToSend = people.map(p => ({
+    name: p.name,
+    busy: p.busy
+  }));
+  
+  dbRef.set(dataToSend).catch(err => {
+    console.error('Ошибка отправки в Firebase:', err);
+    updateSyncStatus(false);
+  });
+}
+
+// ========== Получение данных из Firebase (первая загрузка + реальное время) ==========
+function setupFirebaseSync() {
+  // Показываем статус загрузки
+  updateSyncStatus(false);
+  
+  // Слушаем изменения в реальном времени
+  dbRef.on('value', (snapshot) => {
+    const data = snapshot.val();
+    
+    if (data && Array.isArray(data) && data.length > 0) {
+      // Проверяем, отличаются ли данные от текущих, чтобы избежать лишних рендеров
+      const newPeople = data.map(item => ({
+        name: item.name,
+        busy: item.busy
+      }));
+      
+      const currentJson = JSON.stringify(people.map(p => ({name:p.name, busy:p.busy})));
+      const newJson = JSON.stringify(newPeople);
+      
+      if (currentJson !== newJson) {
+        isUpdatingFromRemote = true;
+        people = newPeople;
+        saveToLocal();
+        render();
+        isUpdatingFromRemote = false;
+      }
+    } else if (data && Array.isArray(data) && data.length === 0) {
+      // База пустая — используем дефолтные данные
+      if (people.length === 0) {
+        isUpdatingFromRemote = true;
+        people = [
+          {name:'Влад',busy:false},{name:'Бодя',busy:false},{name:'Юля',busy:false},
+          {name:'Артур',busy:false},{name:'Яша',busy:false}
+        ];
+        saveToLocal();
+        render();
+        pushToFirebase(); // Отправляем дефолтные данные в базу
+        isUpdatingFromRemote = false;
+      }
+    } else if (!data) {
+      // Если в базе ничего нет, инициализируем дефолтными данными
+      if (people.length === 0) {
+        isUpdatingFromRemote = true;
+        people = [
+          {name:'Влад',busy:false},{name:'Бодя',busy:false},{name:'Юля',busy:false},
+          {name:'Артур',busy:false},{name:'Яша',busy:false}
+        ];
+        saveToLocal();
+        render();
+        pushToFirebase();
+        isUpdatingFromRemote = false;
+      }
+    }
+    
+    updateSyncStatus(true);
+  }, (error) => {
+    console.error('Ошибка подключения к Firebase:', error);
+    updateSyncStatus(false);
+  });
+  
+  // Отслеживаем состояние подключения
+  database.ref('.info/connected').on('value', (snap) => {
+    if (snap.val() === true) {
+      updateSyncStatus(true);
+    } else {
+      updateSyncStatus(false);
+    }
+  });
+}
+
+// ========== Локальное сохранение (кэш) ==========
+function saveToLocal() {
+  try {
+    localStorage.setItem('team_v2', JSON.stringify(people));
+  } catch(e) {}
+}
+
+function loadFromLocal() {
+  try {
+    const d = localStorage.getItem('team_v2');
+    if (d) {
+      const localPeople = JSON.parse(d);
+      if (localPeople && localPeople.length > 0) {
+        people = localPeople;
+      }
+    }
+  } catch(e) {}
+}
+
+// ========== Рендер UI ==========
+function render(){
   const list = document.getElementById('list');
   list.innerHTML = '';
-  people.forEach((p, i) => {
-    const c = getColor(p.name);
+  people.forEach((p,i) => {
+    const c = COLORS[i % COLORS.length];
     const card = document.createElement('div');
     card.className = 'card ' + (p.busy ? 'is-busy' : 'is-free');
-    card.style.animationDelay = (i * 0.04) + 's';
+    card.style.animationDelay = (i*0.04)+'s';
     card.innerHTML = `
       <div class="avatar" style="background:${c.bg};color:${c.cl}">${initials(p.name)}</div>
-      <span class="person-name">${p.name}</span>
+      <span class="person-name">${escapeHtml(p.name)}</span>
       <div class="toggle-area">
-        <span class="status-text ${p.busy ? 'busy' : 'free'}">${p.busy ? 'Занят' : 'Свободен'}</span>
+        <span class="status-text ${p.busy?'busy':'free'}">${p.busy?'Занят':'Свободен'}</span>
         <label class="toggle">
-          <input type="checkbox" ${p.busy ? 'checked' : ''} data-id="${p.id}">
+          <input type="checkbox" ${p.busy?'checked':''} onchange="toggle(${i},this.checked)">
           <div class="track"></div><div class="thumb"></div>
         </label>
       </div>
-      <button class="del-btn" data-id="${p.id}">×</button>
+      <button class="del-btn" onclick="removePerson(${i})">×</button>
     `;
-
-    // toggle
-    card.querySelector('input[type=checkbox]').addEventListener('change', function() {
-      const personRef = ref(db, 'team/' + this.dataset.id);
-      set(personRef, { name: p.name, busy: this.checked });
-    });
-
-    // delete
-    card.querySelector('.del-btn').addEventListener('click', function() {
-      const personRef = ref(db, 'team/' + this.dataset.id);
-      remove(personRef);
-    });
-
     list.appendChild(card);
   });
-
-  const busy = people.filter(p => p.busy).length;
+  const busy = people.filter(p=>p.busy).length;
   document.getElementById('cAll').textContent = people.length;
   document.getElementById('cBusy').textContent = busy;
   document.getElementById('cFree').textContent = people.length - busy;
 }
 
-// Слушаем изменения в реальном времени
-onValue(teamRef, (snapshot) => {
-  setConnected(true);
-  const data = snapshot.val();
-  if (data) {
-    people = Object.entries(data).map(([id, val]) => ({ id, name: val.name, busy: val.busy || false }));
-  } else {
-    // Первый запуск — добавляем дефолтных участников
-    const defaults = ['Влад','Бодя','Юля','Артур','Яша'];
-    defaults.forEach(name => push(teamRef, { name, busy: false }));
-    people = [];
-  }
+function escapeHtml(str) {
+  if (!str) return '';
+  return str.replace(/[&<>]/g, function(m) {
+    if (m === '&') return '&amp;';
+    if (m === '<') return '&lt;';
+    if (m === '>') return '&gt;';
+    return m;
+  });
+}
+
+// ========== CRUD операции ==========
+function toggle(i,checked){
+  if (i >= people.length) return;
+  people[i].busy = checked;
+  saveToLocal();
   render();
-}, (error) => {
-  setConnected(false);
-  console.error('Firebase error:', error);
-});
+  pushToFirebase(); // Отправляем изменения в Firebase
+}
 
-window.addPerson = function() {
-  const inp = document.getElementById('newName');
-  const name = inp.value.trim();
-  if (!name) return;
-  push(teamRef, { name, busy: false });
-  inp.value = '';
-};
+function addPerson(){
+  const inp=document.getElementById('newName');
+  const name=inp.value.trim();
+  if(!name) return;
+  
+  // Проверка на дубликаты
+  if (people.some(p => p.name.toLowerCase() === name.toLowerCase())) {
+    alert('Участник с таким именем уже существует');
+    return;
+  }
+  
+  people.push({name,busy:false});
+  inp.value='';
+  saveToLocal();
+  render();
+  pushToFirebase();
+}
 
-window.handleAdminClick = function() {
-  if (isAdmin) { exitAdmin(); return; }
+function removePerson(i){
+  if (i >= people.length) return;
+  people.splice(i,1);
+  saveToLocal();
+  render();
+  pushToFirebase();
+}
+
+// ========== Админка ==========
+function handleAdminClick(){
+  if(isAdmin){
+    exitAdmin();
+    return;
+  }
   document.getElementById('overlay').classList.add('show');
-  setTimeout(() => document.getElementById('pwdInput').focus(), 50);
-};
+  setTimeout(()=>document.getElementById('pwdInput').focus(),50);
+}
 
-window.checkPwd = function() {
-  if (document.getElementById('pwdInput').value === ADMIN_PWD) {
-    isAdmin = true;
+function checkPwd(){
+  const pwdInput = document.getElementById('pwdInput');
+  if(pwdInput.value === ADMIN_PWD){
+    isAdmin=true;
     document.body.classList.add('admin-mode');
-    document.getElementById('adminBtn').textContent = 'Выйти';
+    document.getElementById('adminBtn').textContent='Выйти';
     document.getElementById('adminBtn').classList.add('active');
     closeModal();
   } else {
-    const inp = document.getElementById('pwdInput');
-    inp.classList.remove('shake'); void inp.offsetWidth; inp.classList.add('shake');
-    document.getElementById('pwdErr').textContent = 'Неверный пароль';
-    inp.value = '';
+    const inp=document.getElementById('pwdInput');
+    inp.classList.remove('shake');
+    void inp.offsetWidth;
+    inp.classList.add('shake');
+    document.getElementById('pwdErr').textContent='Неверный пароль';
+    inp.value='';
   }
-};
+}
 
-function exitAdmin() {
-  isAdmin = false;
+function exitAdmin(){
+  isAdmin=false;
   document.body.classList.remove('admin-mode');
-  document.getElementById('adminBtn').textContent = 'Управление';
+  document.getElementById('adminBtn').textContent='Управление';
   document.getElementById('adminBtn').classList.remove('active');
 }
 
-window.closeModal = function() {
+function closeModal(){
   document.getElementById('overlay').classList.remove('show');
-  document.getElementById('pwdInput').value = '';
-  document.getElementById('pwdErr').textContent = '';
-};
+  document.getElementById('pwdInput').value='';
+  document.getElementById('pwdErr').textContent='';
+}
 
-document.getElementById('pwdInput').addEventListener('keydown', e => {
-  if (e.key === 'Enter') window.checkPwd();
-  if (e.key === 'Escape') window.closeModal();
-  document.getElementById('pwdErr').textContent = '';
+// ========== Инициализация ==========
+function init() {
+  // Сначала загружаем локальный кэш для мгновенного отображения
+  loadFromLocal();
+  
+  // Если нет локальных данных, используем дефолтные
+  if (!people || people.length === 0) {
+    people = [
+      {name:'Влад',busy:false},{name:'Бодя',busy:false},{name:'Юля',busy:false},
+      {name:'Артур',busy:false},{name:'Яша',busy:false}
+    ];
+    saveToLocal();
+  }
+  
+  render();
+  
+  // Настраиваем Firebase синхронизацию
+  setupFirebaseSync();
+}
+
+// ========== Event Listeners ==========
+document.getElementById('pwdInput').addEventListener('keydown',e=>{
+  if(e.key==='Enter') checkPwd();
+  if(e.key==='Escape') closeModal();
+  document.getElementById('pwdErr').textContent='';
 });
-document.getElementById('overlay').addEventListener('click', e => {
-  if (e.target === document.getElementById('overlay')) window.closeModal();
+
+document.getElementById('overlay').addEventListener('click',e=>{
+  if(e.target===document.getElementById('overlay')) closeModal();
 });
-document.getElementById('newName').addEventListener('keydown', e => {
-  if (e.key === 'Enter') window.addPerson();
+
+document.getElementById('newName').addEventListener('keydown',e=>{
+  if(e.key==='Enter') addPerson();
 });
+
+// Запуск приложения
+init();
 </script>
 </body>
 </html>
